@@ -255,31 +255,67 @@ func (m *Manager) LoadBlockchain() error {
 		return nil
 	}
 
+	log.Println("📥 Loading blockchain from database...")
+
+	// Load blocks first (ordered by index)
+	blockRows, err := m.db.Query(`SELECT block_index, timestamp, data, previous_hash, hash, nonce
+		FROM blocks ORDER BY block_index ASC`)
+	if err != nil {
+		log.Printf("⚠️ Failed to load blocks: %v", err)
+	} else {
+		defer blockRows.Close()
+		loadedBlocks := make([]models.Block, 0)
+		for blockRows.Next() {
+			var block models.Block
+			var dataJSON []byte
+
+			if err := blockRows.Scan(&block.Index, &block.Timestamp, &dataJSON,
+				&block.PreviousHash, &block.Hash, &block.Nonce); err == nil {
+				// Unmarshal the data
+				if err := json.Unmarshal(dataJSON, &block.Data); err == nil {
+					loadedBlocks = append(loadedBlocks, block)
+				}
+			}
+		}
+
+		// Replace the blockchain with loaded blocks if we have more than just genesis
+		if len(loadedBlocks) > 1 {
+			m.blockchain.Chain = loadedBlocks
+			log.Printf("✅ Restored %d blocks from database", len(loadedBlocks))
+		} else if len(loadedBlocks) == 1 {
+			log.Printf("ℹ️  Only genesis block in database, keeping current chain")
+		}
+	}
+
 	// Load voters
-	rows, err := m.db.Query(`SELECT voter_id, name, email, department, public_key, registered_at FROM voters`)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
+	voterRows, err := m.db.Query(`SELECT voter_id, name, email, department, public_key, registered_at FROM voters`)
+	if err != nil {
+		log.Printf("⚠️ Failed to load voters: %v", err)
+	} else {
+		defer voterRows.Close()
+		for voterRows.Next() {
 			var voter models.Voter
-			if err := rows.Scan(&voter.VoterID, &voter.Name, &voter.Email,
-							   &voter.Department, &voter.PublicKey, &voter.RegisteredAt); err == nil {
+			if err := voterRows.Scan(&voter.VoterID, &voter.Name, &voter.Email,
+				&voter.Department, &voter.PublicKey, &voter.RegisteredAt); err == nil {
 				m.blockchain.VoterRegistry[voter.VoterID] = &voter
 			}
 		}
 	}
 
 	// Load polls
-	rows, err = m.db.Query(`SELECT poll_id, title, description, options, creator, start_time, end_time,
-							eligible_voters, allow_multiple_votes, is_anonymous FROM polls`)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
+	pollRows, err := m.db.Query(`SELECT poll_id, title, description, options, creator, start_time, end_time,
+		eligible_voters, allow_multiple_votes, is_anonymous FROM polls`)
+	if err != nil {
+		log.Printf("⚠️ Failed to load polls: %v", err)
+	} else {
+		defer pollRows.Close()
+		for pollRows.Next() {
 			var poll models.Poll
 			var optionsJSON, eligibleVotersJSON []byte
 
-			if err := rows.Scan(&poll.PollID, &poll.Title, &poll.Description, &optionsJSON,
-							   &poll.Creator, &poll.StartTime, &poll.EndTime, &eligibleVotersJSON,
-							   &poll.AllowMultipleVotes, &poll.IsAnonymous); err == nil {
+			if err := pollRows.Scan(&poll.PollID, &poll.Title, &poll.Description, &optionsJSON,
+				&poll.Creator, &poll.StartTime, &poll.EndTime, &eligibleVotersJSON,
+				&poll.AllowMultipleVotes, &poll.IsAnonymous); err == nil {
 				json.Unmarshal(optionsJSON, &poll.Options)
 				json.Unmarshal(eligibleVotersJSON, &poll.EligibleVoters)
 				m.blockchain.Polls[poll.PollID] = &poll
@@ -287,8 +323,27 @@ func (m *Manager) LoadBlockchain() error {
 		}
 	}
 
-	log.Printf("Loaded %d voters and %d polls from database",
-			  len(m.blockchain.VoterRegistry), len(m.blockchain.Polls))
+	// Load votes and rebuild VoteRecords
+	voteRows, err := m.db.Query(`SELECT poll_id, voter_id FROM votes ORDER BY timestamp ASC`)
+	if err != nil {
+		log.Printf("⚠️ Failed to load vote records: %v", err)
+	} else {
+		defer voteRows.Close()
+		for voteRows.Next() {
+			var pollID, voterID string
+			if err := voteRows.Scan(&pollID, &voterID); err == nil {
+				// Initialize the slice if it doesn't exist
+				if m.blockchain.VoteRecords[pollID] == nil {
+					m.blockchain.VoteRecords[pollID] = make([]string, 0)
+				}
+				// Add voter to the poll's vote records
+				m.blockchain.VoteRecords[pollID] = append(m.blockchain.VoteRecords[pollID], voterID)
+			}
+		}
+	}
+
+	log.Printf("✅ Loaded: %d blocks, %d voters, %d polls from database",
+		len(m.blockchain.Chain), len(m.blockchain.VoterRegistry), len(m.blockchain.Polls))
 
 	return nil
 }
