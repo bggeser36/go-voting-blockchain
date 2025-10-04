@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  voting-postgres:
+    image: postgres:15-alpine
+    container_name: voting-blockchain-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: voting_blockchain
+      POSTGRES_USER: voting_user
+      POSTGRES_PASSWORD: voting_password123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5433:5432"  # Using port 5433 to avoid conflicts with existing postgres on 5432
+    volumes:
+      - voting_postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - voting-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voting_user -d voting_blockchain"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  voting-redis:
+    image: redis:7-alpine
+    container_name: voting-blockchain-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"  # Using port 6380 to avoid conflicts with existing redis on 6379
+    volumes:
+      - voting_redis_data:/data
+    networks:
+      - voting-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes --requirepass voting_redis_pass123
+
+  # Go Voting Blockchain API
+  voting-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voting-blockchain-api
+    restart: unless-stopped
+    ports:
+      - "8090:8080"  # Using port 8090 to avoid conflicts with existing services
+    environment:
+      # Server Configuration
+      PORT: 8080
+      GIN_MODE: release
+      
+      # Database Configuration
+      DATABASE_URL: postgres://voting_user:voting_password123@voting-postgres:5432/voting_blockchain?sslmode=disable
+      
+      # Redis Configuration
+      REDIS_URL: redis://:voting_redis_pass123@voting-redis:6379/0
+      
+      # Blockchain Configuration
+      MINING_DIFFICULTY: 3
+      
+      # Security
+      ALLOWED_ORIGINS: "*"
+    depends_on:
+      voting-postgres:
+        condition: service_healthy
+      voting-redis:
+        condition: service_healthy
+    networks:
+      - voting-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: pgAdmin for database management
+  voting-pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: voting-blockchain-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5051:80"  # Using port 5051 to avoid conflicts
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@voting.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - voting_pgadmin_data:/var/lib/pgadmin
+    networks:
+      - voting-network
+    profiles:
+      - tools  # Only start when explicitly requested
+
+volumes:
+  voting_postgres_data:
+    driver: local
+  voting_redis_data:
+    driver: local
+  voting_pgadmin_data:
+    driver: local
+
+networks:
+  voting-network:
+    driver: bridge
+    name: voting-blockchain-network
+

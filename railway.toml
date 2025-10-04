@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+buildCommand = "go mod download && go build -o main cmd/api/main.go"
+
+[deploy]
+startCommand = "./main"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
