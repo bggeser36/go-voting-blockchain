@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -30,31 +31,63 @@ func NewManager(bc *blockchain.Blockchain, redisURL, databaseURL string) *Manage
 
 	// Initialize Redis if URL provided
 	if redisURL != "" {
+		log.Printf("Connecting to Redis: %s", redisURL)
 		opt, err := redis.ParseURL(redisURL)
-		if err == nil {
+		if err != nil {
+			log.Printf("Failed to parse Redis URL: %v", err)
+		} else {
 			m.redisClient = redis.NewClient(opt)
-			// Test connection
-			if err := m.redisClient.Ping(m.ctx).Err(); err != nil {
-				log.Printf("Redis connection failed: %v", err)
-				m.redisClient = nil
-			} else {
-				log.Println("Redis connected successfully")
+			// Test connection with retries
+			for i := 0; i < 3; i++ {
+				if err := m.redisClient.Ping(m.ctx).Err(); err != nil {
+					log.Printf("Redis connection attempt %d failed: %v", i+1, err)
+					if i == 2 {
+						log.Printf("Redis connection failed after 3 attempts")
+						m.redisClient = nil
+					} else {
+						time.Sleep(2 * time.Second)
+					}
+				} else {
+					log.Println("✅ Redis connected successfully")
+					break
+				}
 			}
 		}
 	}
 
 	// Initialize PostgreSQL if URL provided
 	if databaseURL != "" {
+		log.Printf("Connecting to PostgreSQL...")
 		db, err := sql.Open("postgres", databaseURL)
-		if err == nil {
-			m.db = db
-			// Test connection
-			if err := db.Ping(); err != nil {
-				log.Printf("Database connection failed: %v", err)
-				m.db = nil
-			} else {
-				log.Println("Database connected successfully")
-				m.createTables()
+		if err != nil {
+			log.Printf("Failed to open database connection: %v", err)
+		} else {
+			// Set connection pool settings
+			db.SetMaxOpenConns(25)
+			db.SetMaxIdleConns(5)
+			db.SetConnMaxLifetime(5 * time.Minute)
+
+			// Test connection with retries
+			for i := 0; i < 3; i++ {
+				if err := db.Ping(); err != nil {
+					log.Printf("Database connection attempt %d failed: %v", i+1, err)
+					if i == 2 {
+						log.Printf("Database connection failed after 3 attempts")
+						m.db = nil
+					} else {
+						time.Sleep(2 * time.Second)
+					}
+				} else {
+					log.Println("✅ Database connected successfully")
+					m.db = db
+					// Always try to create tables
+					if err := m.createTables(); err != nil {
+						log.Printf("Failed to create tables: %v", err)
+					} else {
+						log.Println("✅ Database tables initialized")
+					}
+					break
+				}
 			}
 		}
 	}
@@ -78,7 +111,11 @@ func (m *Manager) Initialize() error {
 }
 
 // createTables creates necessary database tables
-func (m *Manager) createTables() {
+func (m *Manager) createTables() error {
+	if m.db == nil {
+		return fmt.Errorf("database connection is nil")
+	}
+
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS blocks (
 			id SERIAL PRIMARY KEY,
@@ -123,11 +160,23 @@ func (m *Manager) createTables() {
 		`CREATE INDEX IF NOT EXISTS idx_blocks_index ON blocks(block_index)`,
 	}
 
-	for _, query := range queries {
+	for i, query := range queries {
 		if _, err := m.db.Exec(query); err != nil {
-			log.Printf("Failed to create table: %v", err)
+			log.Printf("Failed to execute query %d: %v", i, err)
+			return fmt.Errorf("failed to create tables: %v", err)
 		}
 	}
+
+	// Verify tables were created
+	var count int
+	err := m.db.QueryRow(`SELECT COUNT(*) FROM information_schema.tables
+		WHERE table_schema = 'public' AND table_name IN ('blocks', 'voters', 'polls', 'votes')`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to verify tables: %v", err)
+	}
+
+	log.Printf("✅ Created/verified %d tables", count)
+	return nil
 }
 
 // SaveBlock saves a block to the database
