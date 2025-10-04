@@ -4,12 +4,15 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/voting-blockchain/internal/auth"
 	"github.com/voting-blockchain/internal/blockchain"
 	"github.com/voting-blockchain/internal/handlers"
+	"github.com/voting-blockchain/internal/middleware"
 	"github.com/voting-blockchain/internal/persistence"
 )
 
@@ -64,6 +67,25 @@ func main() {
 	// Initialize blockchain
 	bc := blockchain.NewBlockchain(difficulty)
 
+	// Initialize JWT manager
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "your-secret-key-change-in-production" // Default for development
+		log.Println("⚠️  Using default JWT secret - change in production!")
+	}
+	jwtManager := auth.NewJWTManager(jwtSecret, 24*time.Hour)
+	log.Println("✅ JWT manager initialized")
+
+	// Initialize admin store and create default admin
+	adminStore := auth.NewAdminStore()
+	defaultAdmin, err := adminStore.CreateAdmin("admin", "admin@voting.com", "admin123")
+	if err != nil {
+		log.Printf("⚠️  Failed to create default admin: %v", err)
+	} else {
+		log.Printf("✅ Default admin created: %s (password: admin123)", defaultAdmin.Username)
+		log.Println("⚠️  CHANGE DEFAULT ADMIN PASSWORD IN PRODUCTION!")
+	}
+
 	// Initialize persistence manager if database URLs are provided
 	var persistenceManager *persistence.Manager
 	if redisURL != "" || databaseURL != "" {
@@ -110,30 +132,53 @@ func main() {
 	router.Use(cors.New(config))
 
 	// Initialize handlers
-	h := handlers.NewHandler(bc)
+	h := handlers.NewHandler(bc, jwtManager, adminStore)
 
-	// Define routes
+	// Public routes (no authentication required)
 	router.GET("/", h.GetStatus)
 	router.GET("/health", h.HealthCheck)
 
-	// Voter routes
-	router.POST("/register", h.RegisterVoter)
-	router.GET("/voter/:voter_id/history", h.GetVoterHistory)
+	// Authentication routes
+	router.POST("/auth/login", h.Login)
+	router.POST("/auth/voter-login", h.VoterLogin)
+	router.POST("/auth/refresh", h.RefreshToken)
 
-	// Poll routes
-	router.POST("/polls", h.CreatePoll)
+	// Public voter registration (anyone can register)
+	router.POST("/register", h.RegisterVoter)
+
+	// Protected routes - require authentication
+	authenticated := router.Group("/")
+	authenticated.Use(middleware.AuthMiddleware(jwtManager))
+	{
+		// Current user info
+		authenticated.GET("/auth/me", h.GetCurrentUser)
+
+		// Voter history (voters can only see their own)
+		authenticated.GET("/voter/:voter_id/history", h.GetVoterHistory)
+
+		// Voting (must be authenticated as voter)
+		authenticated.POST("/vote", h.SubmitVote)
+	}
+
+	// Admin-only routes
+	adminRoutes := router.Group("/admin")
+	adminRoutes.Use(middleware.AuthMiddleware(jwtManager))
+	adminRoutes.Use(middleware.RequireRole("admin"))
+	{
+		// Poll management
+		adminRoutes.POST("/polls", h.CreatePoll)
+
+		// Manual mining
+		adminRoutes.POST("/blockchain/mine", h.MinePendingVotes)
+	}
+
+	// Public read-only blockchain routes
 	router.GET("/polls", h.GetPolls)
 	router.GET("/polls/:poll_id", h.GetPollDetails)
 	router.GET("/results/:poll_id", h.GetPollResults)
-
-	// Voting routes
-	router.POST("/vote", h.SubmitVote)
-
-	// Blockchain routes
 	router.GET("/blockchain/verify", h.VerifyBlockchain)
 	router.GET("/blockchain/blocks", h.GetBlocks)
 	router.GET("/blockchain/stats", h.GetBlockchainStats)
-	router.POST("/blockchain/mine", h.MinePendingVotes)
 
 	// Start server
 	log.Printf("🚀 Blockchain Voting System starting on port %s", port)

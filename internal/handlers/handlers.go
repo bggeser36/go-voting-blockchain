@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/voting-blockchain/internal/auth"
 	"github.com/voting-blockchain/internal/blockchain"
 	"github.com/voting-blockchain/internal/crypto"
 	"github.com/voting-blockchain/internal/models"
@@ -14,13 +15,17 @@ import (
 type Handler struct {
 	blockchain *blockchain.Blockchain
 	crypto     *crypto.CryptoManager
+	jwtManager *auth.JWTManager
+	adminStore *auth.AdminStore
 }
 
 // NewHandler creates a new handler instance
-func NewHandler(bc *blockchain.Blockchain) *Handler {
+func NewHandler(bc *blockchain.Blockchain, jwtManager *auth.JWTManager, adminStore *auth.AdminStore) *Handler {
 	return &Handler{
 		blockchain: bc,
 		crypto:     crypto.NewCryptoManager(),
+		jwtManager: jwtManager,
+		adminStore: adminStore,
 	}
 }
 
