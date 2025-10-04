@@ -125,9 +125,12 @@ func main() {
 	router := gin.New()
 
 	// Add custom middleware in order
-	router.Use(gin.Logger())                          // Logging
+	router.Use(middleware.RequestIDMiddleware())      // Request ID tracking (must be first)
 	router.Use(middleware.RecoveryMiddleware())       // Panic recovery
-	router.Use(middleware.RequestIDMiddleware())      // Request ID tracking
+	router.Use(middleware.DetailedLogger())           // Detailed request logging
+	router.Use(middleware.SecurityLogger())           // Security event logging
+	router.Use(middleware.AuditLogger())              // Business event audit logging
+	router.Use(middleware.MetricsMiddleware())        // Metrics collection
 	router.Use(middleware.ErrorHandlerMiddleware())   // Centralized error handling
 
 	// Configure CORS
