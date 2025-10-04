@@ -121,8 +121,14 @@ func main() {
 		log.Println("⚠️ No persistence layer configured (running in-memory only)")
 	}
 
-	// Create router
-	router := gin.Default()
+	// Create router without default middleware
+	router := gin.New()
+
+	// Add custom middleware in order
+	router.Use(gin.Logger())                          // Logging
+	router.Use(middleware.RecoveryMiddleware())       // Panic recovery
+	router.Use(middleware.RequestIDMiddleware())      // Request ID tracking
+	router.Use(middleware.ErrorHandlerMiddleware())   // Centralized error handling
 
 	// Configure CORS
 	config := cors.DefaultConfig()
@@ -189,6 +195,10 @@ func main() {
 		publicAPI.GET("/blockchain/blocks", h.GetBlocks)
 		publicAPI.GET("/blockchain/stats", h.GetBlockchainStats)
 	}
+
+	// Handle 404 and 405 errors
+	router.NoRoute(middleware.NotFoundHandler())
+	router.NoMethod(middleware.MethodNotAllowedHandler())
 
 	// Start server
 	log.Printf("🚀 Blockchain Voting System starting on port %s", port)
