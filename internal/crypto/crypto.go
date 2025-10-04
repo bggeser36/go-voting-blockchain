@@ -190,3 +190,27 @@ func (v *SecureVoter) GetPublicCredentials() map[string]string {
 		"public_key": string(v.PublicKey),
 	}
 }
+
+// VerifyPrivateKeyOwnership verifies that a private key matches a public key
+// This is used during voter login to prove ownership of the private key
+func (cm *CryptoManager) VerifyPrivateKeyOwnership(privateKeyPEM, publicKeyPEM []byte, voterID string) error {
+	// Try to sign a challenge with the private key
+	challenge := []byte("challenge:" + voterID)
+
+	signature, err := cm.SignData(challenge, privateKeyPEM)
+	if err != nil {
+		return fmt.Errorf("invalid private key: %w", err)
+	}
+
+	// Verify the signature with the public key
+	valid, err := cm.VerifySignature(challenge, signature, publicKeyPEM)
+	if err != nil {
+		return fmt.Errorf("signature verification failed: %w", err)
+	}
+
+	if !valid {
+		return fmt.Errorf("private key does not match public key")
+	}
+
+	return nil
+}

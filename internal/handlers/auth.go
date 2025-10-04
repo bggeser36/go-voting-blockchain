@@ -86,8 +86,19 @@ func (h *Handler) VoterLogin(c *gin.Context) {
 		return
 	}
 
-	// In production, you would verify the private key signature here
-	// For now, we'll generate a token for the voter
+	// Verify private key ownership
+	err := h.crypto.VerifyPrivateKeyOwnership(
+		[]byte(req.PrivateKey),
+		[]byte(voter.PublicKey),
+		voter.VoterID,
+	)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, models.APIResponse{
+			Success: false,
+			Error:   "Invalid private key",
+		})
+		return
+	}
 
 	token, err := h.jwtManager.GenerateToken(voter.VoterID, voter.Email, "voter", voter.VoterID)
 	if err != nil {

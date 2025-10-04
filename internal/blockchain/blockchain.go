@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/voting-blockchain/internal/crypto"
 	"github.com/voting-blockchain/internal/models"
 )
 
@@ -21,6 +22,7 @@ type Blockchain struct {
 	Polls           map[string]*models.Poll
 	VoterRegistry   map[string]*models.Voter
 	VoteRecords     map[string][]string // poll_id -> voter_ids who voted
+	crypto          *crypto.CryptoManager
 	mu              sync.RWMutex
 }
 
@@ -34,6 +36,7 @@ func NewBlockchain(difficulty int) *Blockchain {
 		Polls:           make(map[string]*models.Poll),
 		VoterRegistry:   make(map[string]*models.Voter),
 		VoteRecords:     make(map[string][]string),
+		crypto:          crypto.NewCryptoManager(),
 	}
 
 	// Create genesis block
@@ -163,8 +166,22 @@ func (bc *Blockchain) CastVote(vote *models.Vote) error {
 	}
 
 	// Validate voter is registered
-	if _, exists := bc.VoterRegistry[vote.VoterID]; !exists {
+	voter, exists := bc.VoterRegistry[vote.VoterID]
+	if !exists {
 		return fmt.Errorf("voter not registered")
+	}
+
+	// Verify vote signature (cryptographic proof of vote authenticity)
+	if vote.Signature != "" {
+		voteData := fmt.Sprintf("%s:%s:%s", vote.VoterID, vote.PollID, vote.Choice)
+		valid, err := bc.crypto.VerifySignature(
+			[]byte(voteData),
+			vote.Signature,
+			[]byte(voter.PublicKey),
+		)
+		if err != nil || !valid {
+			return fmt.Errorf("invalid vote signature: vote authenticity could not be verified")
+		}
 	}
 
 	// Check if voter is eligible for this poll
