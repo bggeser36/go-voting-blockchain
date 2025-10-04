@@ -138,17 +138,22 @@ func main() {
 	router.GET("/", h.GetStatus)
 	router.GET("/health", h.HealthCheck)
 
-	// Authentication routes
-	router.POST("/auth/login", h.Login)
-	router.POST("/auth/voter-login", h.VoterLogin)
-	router.POST("/auth/refresh", h.RefreshToken)
+	// Authentication routes - strict rate limiting to prevent brute force
+	authRoutes := router.Group("/auth")
+	authRoutes.Use(middleware.StrictRateLimit())
+	{
+		authRoutes.POST("/login", h.Login)
+		authRoutes.POST("/voter-login", h.VoterLogin)
+		authRoutes.POST("/refresh", h.RefreshToken)
+	}
 
-	// Public voter registration (anyone can register)
-	router.POST("/register", h.RegisterVoter)
+	// Public voter registration - strict rate limiting to prevent spam
+	router.POST("/register", middleware.StrictRateLimit(), h.RegisterVoter)
 
-	// Protected routes - require authentication
+	// Protected routes - require authentication with moderate rate limiting
 	authenticated := router.Group("/")
 	authenticated.Use(middleware.AuthMiddleware(jwtManager))
+	authenticated.Use(middleware.ModerateRateLimit())
 	{
 		// Current user info
 		authenticated.GET("/auth/me", h.GetCurrentUser)
@@ -160,10 +165,11 @@ func main() {
 		authenticated.POST("/vote", h.SubmitVote)
 	}
 
-	// Admin-only routes
+	// Admin-only routes with moderate rate limiting
 	adminRoutes := router.Group("/admin")
 	adminRoutes.Use(middleware.AuthMiddleware(jwtManager))
 	adminRoutes.Use(middleware.RequireRole("admin"))
+	adminRoutes.Use(middleware.ModerateRateLimit())
 	{
 		// Poll management
 		adminRoutes.POST("/polls", h.CreatePoll)
@@ -172,13 +178,17 @@ func main() {
 		adminRoutes.POST("/blockchain/mine", h.MinePendingVotes)
 	}
 
-	// Public read-only blockchain routes
-	router.GET("/polls", h.GetPolls)
-	router.GET("/polls/:poll_id", h.GetPollDetails)
-	router.GET("/results/:poll_id", h.GetPollResults)
-	router.GET("/blockchain/verify", h.VerifyBlockchain)
-	router.GET("/blockchain/blocks", h.GetBlocks)
-	router.GET("/blockchain/stats", h.GetBlockchainStats)
+	// Public read-only blockchain routes with generous rate limiting
+	publicAPI := router.Group("/")
+	publicAPI.Use(middleware.GenerousRateLimit())
+	{
+		publicAPI.GET("/polls", h.GetPolls)
+		publicAPI.GET("/polls/:poll_id", h.GetPollDetails)
+		publicAPI.GET("/results/:poll_id", h.GetPollResults)
+		publicAPI.GET("/blockchain/verify", h.VerifyBlockchain)
+		publicAPI.GET("/blockchain/blocks", h.GetBlocks)
+		publicAPI.GET("/blockchain/stats", h.GetBlockchainStats)
+	}
 
 	// Start server
 	log.Printf("🚀 Blockchain Voting System starting on port %s", port)
