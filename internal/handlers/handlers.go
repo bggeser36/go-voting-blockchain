@@ -9,6 +9,7 @@ import (
 	"github.com/voting-blockchain/internal/blockchain"
 	"github.com/voting-blockchain/internal/crypto"
 	"github.com/voting-blockchain/internal/models"
+	"github.com/voting-blockchain/internal/validation"
 )
 
 // Handler manages API handlers
@@ -17,6 +18,7 @@ type Handler struct {
 	crypto     *crypto.CryptoManager
 	jwtManager *auth.JWTManager
 	adminStore *auth.AdminStore
+	validator  *validation.Validator
 }
 
 // NewHandler creates a new handler instance
@@ -26,6 +28,7 @@ func NewHandler(bc *blockchain.Blockchain, jwtManager *auth.JWTManager, adminSto
 		crypto:     crypto.NewCryptoManager(),
 		jwtManager: jwtManager,
 		adminStore: adminStore,
+		validator:  validation.NewValidator(),
 	}
 }
 
@@ -47,6 +50,35 @@ func (h *Handler) GetStatus(c *gin.Context) {
 func (h *Handler) RegisterVoter(c *gin.Context) {
 	var req models.VoterRegistrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Validate and sanitize input
+	req.Email = h.validator.SanitizeString(req.Email)
+	req.Name = h.validator.SanitizeString(req.Name)
+	req.Department = h.validator.SanitizeString(req.Department)
+
+	if err := h.validator.ValidateEmail(req.Email); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	if err := h.validator.ValidateName(req.Name); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	if err := h.validator.ValidateDepartment(req.Department); err != nil {
 		c.JSON(http.StatusBadRequest, models.APIResponse{
 			Success: false,
 			Error:   err.Error(),
@@ -97,6 +129,48 @@ func (h *Handler) RegisterVoter(c *gin.Context) {
 func (h *Handler) CreatePoll(c *gin.Context) {
 	var req models.PollCreationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Validate and sanitize input
+	req.Title = h.validator.SanitizeString(req.Title)
+	req.Description = h.validator.SanitizeString(req.Description)
+	req.Creator = h.validator.SanitizeString(req.Creator)
+
+	if err := h.validator.ValidatePollTitle(req.Title); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	if err := h.validator.ValidatePollDescription(req.Description); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Sanitize poll options
+	for i := range req.Options {
+		req.Options[i] = h.validator.SanitizeString(req.Options[i])
+	}
+
+	if err := h.validator.ValidatePollOptions(req.Options); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	if err := h.validator.ValidateDuration(int(req.DurationHours)); err != nil {
 		c.JSON(http.StatusBadRequest, models.APIResponse{
 			Success: false,
 			Error:   err.Error(),

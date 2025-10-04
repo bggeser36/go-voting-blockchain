@@ -33,6 +33,18 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
+	// Validate and sanitize input
+	req.Username = h.validator.SanitizeString(req.Username)
+	req.Password = h.validator.SanitizeString(req.Password)
+
+	if err := h.validator.ValidateUsername(req.Username); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
 	// Validate credentials
 	admin, err := h.adminStore.ValidateCredentials(req.Username, req.Password)
 	if err != nil {
@@ -72,6 +84,17 @@ func (h *Handler) VoterLogin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, models.APIResponse{
 			Success: false,
 			Error:   "Invalid request format",
+		})
+		return
+	}
+
+	// Validate and sanitize input
+	req.VoterID = h.validator.SanitizeString(req.VoterID)
+
+	if err := h.validator.ValidateVoterID(req.VoterID); err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   err.Error(),
 		})
 		return
 	}
