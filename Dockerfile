@@ -1,8 +1,8 @@
 # Build stage
 FROM golang:1.21-alpine AS builder
 
-# Install dependencies
-RUN apk add --no-cache git ca-certificates
+# Install dependencies and build tools
+RUN apk add --no-cache git ca-certificates tzdata
 
 # Set working directory
 WORKDIR /app
@@ -16,35 +16,57 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application with optimizations
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-w -s' -o main cmd/api/main.go
+# Build the application with optimizations and security flags
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -a -installsuffix cgo \
+    -ldflags '-w -s -extldflags "-static"' \
+    -buildmode=pie \
+    -trimpath \
+    -o main cmd/api/main.go
 
-# Final stage
-FROM alpine:latest
+# Final stage - Production optimized
+FROM alpine:3.18
 
-# Install ca-certificates for HTTPS and timezone data
-RUN apk --no-cache add ca-certificates tzdata
+# Install runtime dependencies and security updates
+RUN apk --no-cache add \
+    ca-certificates \
+    tzdata \
+    curl \
+    && rm -rf /var/cache/apk/*
 
 # Create non-root user for security
-RUN adduser -D -s /bin/sh appuser
+RUN adduser -D -s /bin/sh -u 1001 appuser
 
+# Create app directory with proper permissions
 WORKDIR /app
 
 # Copy the binary from builder
 COPY --from=builder /app/main .
 
-# Change ownership to appuser
-RUN chown -R appuser:appuser /app
+# Create logs directory
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
 
-# Expose port
+# Expose port (configurable via environment)
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+# Health check with timeout and retries
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the application
+# Add labels for better container management
+LABEL maintainer="tolstoyjustin@gmail.com" \
+      version="1.1.0" \
+      description="Go Voting Blockchain - Phase 1 Security Features" \
+      org.opencontainers.image.title="Go Voting Blockchain" \
+      org.opencontainers.image.description="Secure blockchain-based voting system with JWT authentication" \
+      org.opencontainers.image.version="1.1.0" \
+      org.opencontainers.image.authors="tolstoyjustin@gmail.com" \
+      org.opencontainers.image.url="https://github.com/tolstoyjustin/go-voting-blockchain" \
+      org.opencontainers.image.documentation="https://github.com/tolstoyjustin/go-voting-blockchain/blob/main/README.md" \
+      org.opencontainers.image.source="https://github.com/tolstoyjustin/go-voting-blockchain"
+
+# Run the application with proper signal handling
 CMD ["./main"]
